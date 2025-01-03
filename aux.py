@@ -6,19 +6,19 @@ from scipy import sparse
 
 def make_dataframe(contents):
     """
-    Create a DataFrame from a list of dictionaries.
+    Cria um DataFrame a partir de uma lista de dicionários.
 
     Args:
-        contents (list): A list of dictionaries.
+        contents (list): Uma lista de dicionários.
 
     Returns:
-        pd.DataFrame: A DataFrame containing the data from the dictionaries.
+        pd.DataFrame: Um DataFrame contendo os dados dos dicionários.
     """
     if contents is None:
         return None
 
     contents_df = pd.DataFrame(contents)
-    # Columns to drop
+    # Colunas a serem removidas
     drop = [
         "Production",
         "Website",
@@ -36,22 +36,22 @@ def make_dataframe(contents):
     ]
     contents_df.drop(columns=drop, inplace=True)
 
-    # Replacing incomplete values to NaN
+    # Substituir valores incompletos por NaN
     contents_df.replace("N/A", np.nan, inplace=True)
     contents_df.replace("None", np.nan, inplace=True)
 
-    # Removing characters to convert to numeric values
+    # Remover caracteres para converter em valores numéricos
     contents_df.rename(columns={"Runtime": "Runtime (min)"}, inplace=True)
     replace = {"Year": "-", "imdbVotes": ",", "imdbRating": "", "Runtime (min)": " min"}
     for key, value in replace.items():
         contents_df[key] = contents_df[key].str.replace(value, "", regex=False)
 
-    # Converting to numeric
+    # Converter para valores numéricos
     numeric_columns = ["imdbVotes", "imdbRating", "Metascore", "Runtime (min)"]
     for col in numeric_columns:
         contents_df[col] = pd.to_numeric(contents_df[col], errors="coerce")
 
-    # Filling NaN values
+    # Preencher valores NaN
     fill_values = {
         "Rated": "Not_Rated",
         "Metascore": 0,
@@ -67,14 +67,14 @@ def make_dataframe(contents):
     for col in int_columns:
         contents_df[col] = contents_df[col].astype(int)
 
-    # Removing non-alphanumrics characters
+    # Remover caracteres não alfanuméricos
     chars = ",;:-()[]{}'\""
     for col in contents_df.columns:
         if contents_df[col].dtype == "object":
             for c in chars:
                 contents_df[col] = contents_df[col].astype(str).str.replace(c, "")
 
-    # Converting country names to a single name
+    # Converter nomes de países para um único nome
     countries = {
         "United States": "USA",
         "United Kingdom": "UK",
@@ -91,29 +91,29 @@ def make_dataframe(contents):
 
 def get_features(contents_df, ItemId):
     """
-    Get the features of an item from a DataFrame.
+    Obtém as características de um item a partir de um DataFrame.
 
     Args:
-        contents_df (pd.DataFrame): The DataFrame containing the item features.
-        ItemId (str): The ID of the item.
+        contents_df (pd.DataFrame): O DataFrame contendo as características dos itens.
+        ItemId (str): O ID do item.
 
     Returns:
-        dict: A dictionary of the item's features.
+        dict: Um dicionário com as características do item.
     """
     item = contents_df[contents_df["ItemId"] == ItemId]
     if item.empty:
         return None
 
+    # Separar as colunas categóricas
     category_columns = [
         col for col in contents_df.columns if contents_df[col].dtype == "object"
     ]
     category_columns.remove("ItemId")
     features = {}
-
     for col in category_columns:
         features[col] = item[col].values[0]
 
-    # Convert NaN values to empty strings
+    # Converter valores NaN para strings vazias
     for key, value in features.items():
         if value == "nan" or pd.isna(value):
             features[key] = ""
@@ -123,13 +123,13 @@ def get_features(contents_df, ItemId):
 
 def features_to_str(features):
     """
-    Convert a dictionary of features to a string.
+    Converte um dicionário de características em uma string.
 
     Args:
-        features (dict): A dictionary of features.
+        features (dict): Um dicionário de características.
 
     Returns:
-        str: A string of features.
+        str: Uma string de características.
     """
     if features is None:
         return ""
@@ -141,68 +141,68 @@ def features_to_str(features):
     return " ".join(text)
 
 
-def get_tfidf(contents_df, max_features=100_000):
+def get_tfidf(contents_df, max_features=10_000):
     """
-    Calculates the Term Frequency-Inverse Document Frequency for the features of each item in the dataframe.
+    Calcula a Term Frequency-Inverse Document Frequency para as características de cada item no dataframe.
 
     Args:
-        contents_df (pd.DataFrame): Dataframe containing item features.
+        contents_df (pd.DataFrame): Dataframe contendo as características dos itens.
+        max_features (int): Número máximo de características a serem consideradas.
 
     Returns:
-        scipy.sparse.csr_matrix: TF-IDF matrix.
-        list: Feature names.
+        scipy.sparse.csr_matrix: Matriz TF-IDF.
+        list: Nomes das características.
     """
-    print("Calculating TF-IDF...")
+    print("Calculando TF-IDF...")
     vectorizer = TfidfVectorizer(max_features=max_features)
     l = len(contents_df)
-    printProgressBar(0, l, prefix="Progress:", suffix="Complete", length=50)
+    printProgressBar(0, l, length=50)
     item_features_text = []
 
-    # Apply features_to_str to each item's features
+    # Aplicar features_to_str para as características de cada item
     for i, row in contents_df.iterrows():
         item_id = row["ItemId"]
         features = get_features(contents_df, item_id)
         item_features_text.append(features_to_str(features))
-        printProgressBar(i + 1, l, prefix="Progress:", suffix="Complete", length=50)
+        printProgressBar(i + 1, l, length=50)
 
     tfidf_matrix = vectorizer.fit_transform(item_features_text)
     feature_names = vectorizer.get_feature_names_out()
-    print("TF-IDF Complete.")
+    print("TF-IDF Completo.")
     return tfidf_matrix, feature_names
 
 
-def get_item_vector(item_id, items_idx, tfidf_matrix):
+def get_item_vector(item_id, items_index, tfidf_matrix):
     """
-    Get the vector representation of an item.
+    Obtém a representação vetorial de um item.
 
     Args:
-        item_id (str): The ID of the item.
-        items_idx (dict): A dictionary mapping item IDs to their index in the tfidf matrix.
-        tfidf_matrix (scipy.sparse.csr_matrix): The TF-IDF matrix.
+        item_id (str): O ID do item.
+        items_index (dict): Um dicionário que mapeia IDs de itens para seus índices na matriz TF-IDF.
+        tfidf_matrix (scipy.sparse.csr_matrix): A matriz TF-IDF.
 
     Returns:
-        numpy.ndarray: The vector representation of the item.
+        numpy.ndarray: A representação vetorial do item.
     """
-    if item_id not in items_idx:
+    if item_id not in items_index:
         return None
-    item_index = items_idx[item_id]
+    item_index = items_index[item_id]
     item_vector = tfidf_matrix[item_index].toarray()[0]
     return item_vector
 
 
 def get_user_vector(user_id, ratings_df, utility_matrix, tfidf_matrix):
     """
-    Get the vector representation of a user.
+    Obtém a representação vetorial de um usuário.
 
     Args:
-        user_id (str): The ID of the user.
-        ratings_df (pd.DataFrame): DataFrame containing user-item ratings.
-        items_idx (dict): A dictionary mapping item IDs to their index in the tfidf matrix.
-        utility_matrix (scipy.sparse.csr_matrix): The utility matrix.
-        tfidf_matrix (scipy.sparse.csr_matrix): The TF-IDF matrix.
+        user_id (str): O ID do usuário.
+        ratings_df (pd.DataFrame): DataFrame contendo as avaliações de usuário-item.
+        utility_matrix (scipy.sparse.csr_matrix): A matriz de utilidade.
+        tfidf_matrix (scipy.sparse.csr_matrix): A matriz TF-IDF.
 
     Returns:
-        numpy.ndarray: The vector representation of the user.
+        numpy.ndarray: A representação vetorial do usuário.
     """
     user_map = {user: i for i, user in enumerate(ratings_df["UserId"].unique())}
     u = utility_matrix[user_map[user_id], :].tocsr()
@@ -212,39 +212,39 @@ def get_user_vector(user_id, ratings_df, utility_matrix, tfidf_matrix):
 
 def cos_sim(v1, v2):
     """
-    Calculate the cosine similarity between two vectors.
+    Calcula a similaridade do cosseno entre dois vetores.
 
     Args:
-        v1 (numpy.ndarray): The first vector.
-        v2 (numpy.ndarray): The second vector.
+        v1 (numpy.ndarray): O primeiro vetor.
+        v2 (numpy.ndarray): O segundo vetor.
 
     Returns:
-        float: The cosine similarity between the two vectors.
+        float: A similaridade do cosseno entre os dois vetores.
     """
     return np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
 
 
 def get_utility_matrix(ratings_df, contents_df):
     """
-    Create a utility matrix from a ratings dataframe.
+    Cria uma matriz de utilidade a partir de um dataframe de avaliações.
 
     Args:
-        ratings_df (pd.DataFrame): DataFrame containing user-item ratings.
-        contents_df (pd.DataFrame): Dataframe containing item features.
+        ratings_df (pd.DataFrame): DataFrame contendo avaliações de usuário-item.
+        contents_df (pd.DataFrame): Dataframe contendo características dos itens.
 
     Returns:
-        scipy.sparse.csr_matrix: The utility matrix.
+        scipy.sparse.csr_matrix: A matriz de utilidade.
     """
-    # Create user and item mappings
+    # Criar mapeamentos de usuários e itens
     user_map = {user: i for i, user in enumerate(ratings_df["UserId"].unique())}
     item_map = {item: i for i, item in enumerate(contents_df["ItemId"])}
 
-    # Extract data for sparse matrix
+    # Extrair dados para matriz esparsa
     rows = [user_map[user] for user in ratings_df["UserId"]]
     cols = [item_map[item] for item in ratings_df["ItemId"]]
     data = ratings_df["Rating"]
 
-    # Create the sparse matrix
+    # Criar a matriz esparsa
     sparse_matrix = sparse.csr_matrix(
         (data, (rows, cols)), shape=(len(user_map), len(item_map)), dtype=np.int8
     )
@@ -259,25 +259,27 @@ def get_item_ranking(
     tfidf_matrix,
     item_map,
     top=100,
-    alpha=0.01,
-    beta=0.1,
+    alpha=0.05,
+    beta=0.5,
 ):
     """
-    Get the ranking of items for a user.
+    Obtém o ranking de itens para um usuário.
 
     Args:
-        user_id (str): The ID of the user.
-        targets_df (pd.DataFrame): DataFrame containing user-item targets.
-        contents_df (pd.DataFrame): Dataframe containing item features.
-        user_vector (numpy.ndarray): The vector representation of the user.
-        tfidf_matrix (scipy.sparse.csr_matrix): The TF-IDF matrix.
-        top (int): The number of top items to consider.
-        alpha (float): The weight for the metascore.
-        beta (float): The weight for the IMDB rating.
+        user_id (str): O ID do usuário.
+        targets_df (pd.DataFrame): DataFrame contendo os alvos de usuário-item.
+        contents_df (pd.DataFrame): Dataframe contendo as características dos itens.
+        user_vector (numpy.ndarray): A representação vetorial do usuário.
+        tfidf_matrix (scipy.sparse.csr_matrix): A matriz TF-IDF.
+        item_map (dict): Mapeamento de itens para seus índices na matriz TF-IDF.
+        top (int): O número de itens principais a serem considerados.
+        alpha (float): O peso para o metascore.
+        beta (float): O peso para a classificação IMDB.
 
     Returns:
-        dict: A dictionary of the top items for the user.
+        dict: Um dicionário dos principais itens para o usuário.
     """
+    # Encontrar os 100 itens do usuário
     user_targets = targets_df.loc[targets_df["UserId"] == user_id, "ItemId"].tolist()
     item_data = contents_df.loc[
         contents_df["ItemId"].isin(user_targets),
@@ -285,6 +287,7 @@ def get_item_ranking(
     ]
     r_ui = dict(zip(user_targets, np.zeros(len(user_targets))))
 
+    # Fazer o cálculo de r_ui para cada item
     for item_id, metascore, imdb_rating, imdb_votes in zip(
         item_data["ItemId"],
         item_data["Metascore"],
@@ -298,23 +301,24 @@ def get_item_ranking(
             + beta * (imdb_rating - imdb_rating / (1 + np.log(imdb_votes)))
         )
 
+    # Ordernar os itens em ordem decrescente
     item_ranking = {
         k: v for k, v in sorted(r_ui.items(), key=lambda item: item[1], reverse=True)
     }
-    top_items = dict(list(item_ranking.items())[:top])
+    top_items = dict(list(item_ranking.items())[:min(top, len(r_ui))])
     return top_items
 
 
 def n_ratings(user_index, utility_matrix):
     """
-    Get the number of ratings for a user.
+    Obtém o número de avaliações de um usuário.
 
     Args:
-        user_index (int): The index of the user.
-        utility_matrix (scipy.sparse.csr_matrix): The utility matrix.
+        user_index (int): O índice do usuário.
+        utility_matrix (scipy.sparse.csr_matrix): A matriz de utilidade.
 
     Returns:
-        int: The number of ratings for the user.
+        int: O número de avaliações do usuário.
     """
     user_ratings = utility_matrix[user_index, :].nonzero()[1]
     return len(user_ratings)
@@ -323,30 +327,30 @@ def n_ratings(user_index, utility_matrix):
 def printProgressBar(
     iteration,
     total,
-    prefix="",
-    suffix="",
+    prefix="Progreso",
+    suffix="Completo",
     decimals=1,
     length=100,
     fill="█",
     printEnd="\r",
 ):
     """
-    Call in a loop to create terminal progress bar
+    Chame em um loop para criar uma barra de progresso no terminal
 
     Args:
-        iteration (int): current iteration
-        total (int): total iterations
-        prefix (str): prefix string
-        suffix (str): suffix string
-        decimals (int): positive number of decimals in percent complete
-        length (int): character length of bar
-        fill (str): bar fill character
-        printEnd (str): end character (e.g. "\r", "\r\n")
+        iteration (int): iteração atual
+        total (int): total de iterações
+        prefix (str): string de prefixo
+        suffix (str): string de sufixo
+        decimals (int): número positivo de decimais no percentual completo
+        length (int): comprimento em caracteres da barra
+        fill (str): caractere de preenchimento da barra
+        printEnd (str): caractere de fim (por exemplo, "\r", "\r\n")
     """
     percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
     filledLength = int(length * iteration // total)
     bar = fill * filledLength + "-" * (length - filledLength)
     print(f"\r{prefix} |{bar}| {percent}% {suffix}", end=printEnd)
-    # Print New Line on Complete
+    # Imprimir nova linha ao completar
     if iteration == total:
         print()
