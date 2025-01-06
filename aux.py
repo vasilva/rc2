@@ -57,7 +57,7 @@ def make_dataframe(contents):
         "Metascore": 0,
         "Runtime (min)": 0,
         "imdbRating": 0,
-        "imdbVotes": 1,
+        "imdbVotes": 0,
         "Year": 0,
     }
     contents_df.fillna(fill_values, inplace=True)
@@ -80,8 +80,6 @@ def make_dataframe(contents):
         "United Kingdom": "UK",
         "United Arab Emirates": "UAE",
         "Republic of Ireland": "Ireland",
-        "South Korea": "Korea",
-        "People's Republic of China": "China",
     }
     for key, value in countries.items():
         contents_df["Country"] = contents_df["Country"].str.replace(key, value)
@@ -89,18 +87,18 @@ def make_dataframe(contents):
     return contents_df
 
 
-def get_features(contents_df, ItemId):
+def get_features(contents_df, item_id):
     """
     Obtém as características de um item a partir de um DataFrame.
 
     Args:
         contents_df (pd.DataFrame): O DataFrame contendo as características dos itens.
-        ItemId (str): O ID do item.
+        item_id (str): O ID do item.
 
     Returns:
         dict: Um dicionário com as características do item.
     """
-    item = contents_df[contents_df["ItemId"] == ItemId]
+    item = contents_df[contents_df["ItemId"] == item_id]
     if item.empty:
         return None
 
@@ -151,9 +149,8 @@ def get_tfidf(contents_df, max_features=10_000):
 
     Returns:
         scipy.sparse.csr_matrix: Matriz TF-IDF.
-        list: Nomes das características.
     """
-    print("Calculando TF-IDF...")
+    print(f"Calculando TF-IDF com {max_features} features...")
     vectorizer = TfidfVectorizer(max_features=max_features)
     l = len(contents_df)
     printProgressBar(0, l, length=50)
@@ -167,9 +164,8 @@ def get_tfidf(contents_df, max_features=10_000):
         printProgressBar(i + 1, l, length=50)
 
     tfidf_matrix = vectorizer.fit_transform(item_features_text)
-    feature_names = vectorizer.get_feature_names_out()
     print("TF-IDF Completo.")
-    return tfidf_matrix, feature_names
+    return tfidf_matrix
 
 
 def get_item_vector(item_id, items_index, tfidf_matrix):
@@ -198,7 +194,7 @@ def get_user_vector(user_id, ratings_df, utility_matrix, tfidf_matrix):
     Args:
         user_id (str): O ID do usuário.
         ratings_df (pd.DataFrame): DataFrame contendo as avaliações de usuário-item.
-        utility_matrix (scipy.sparse.csr_matrix): A matriz de utilidade.
+        utility_matrix (scipy.sparse.csr_matrix): A matriz de notas de usuários-itens.
         tfidf_matrix (scipy.sparse.csr_matrix): A matriz TF-IDF.
 
     Returns:
@@ -272,7 +268,7 @@ def get_item_ranking(
         user_vector (numpy.ndarray): A representação vetorial do usuário.
         tfidf_matrix (scipy.sparse.csr_matrix): A matriz TF-IDF.
         item_map (dict): Mapeamento de itens para seus índices na matriz TF-IDF.
-        top (int): O número de itens principais a serem considerados.
+        top (int): O número de itens a serem retornados, Range(1-100).
         alpha (float): O peso para o metascore.
         beta (float): O peso para a classificação IMDB.
 
@@ -280,6 +276,9 @@ def get_item_ranking(
         dict: Um dicionário dos principais itens para o usuário.
     """
     # Encontrar os 100 itens do usuário
+    if top < 1 or top > 100:
+        raise ValueError("O parâmerto 'top' deve ser entre 1 e 100.")
+
     user_targets = targets_df.loc[targets_df["UserId"] == user_id, "ItemId"].tolist()
     item_data = contents_df.loc[
         contents_df["ItemId"].isin(user_targets),
@@ -296,16 +295,15 @@ def get_item_ranking(
     ):
         item_vector = get_item_vector(item_id, item_map, tfidf_matrix)
         r_ui[item_id] = cos_sim(user_vector.flatten(), item_vector.flatten()) * (
-            1
-            + alpha * metascore
-            + beta * (imdb_rating - imdb_rating / (1 + np.log(imdb_votes)))
+            1 + alpha * metascore + beta * (imdb_rating + np.sqrt(imdb_votes))
         )
 
     # Ordernar os itens em ordem decrescente
     item_ranking = {
         k: v for k, v in sorted(r_ui.items(), key=lambda item: item[1], reverse=True)
     }
-    top_items = dict(list(item_ranking.items())[:min(top, len(r_ui))])
+
+    top_items = dict(list(item_ranking.items())[:top])
     return top_items
 
 
@@ -315,7 +313,7 @@ def n_ratings(user_index, utility_matrix):
 
     Args:
         user_index (int): O índice do usuário.
-        utility_matrix (scipy.sparse.csr_matrix): A matriz de utilidade.
+        utility_matrix (scipy.sparse.csr_matrix): A matriz de notas de usuários-itens.
 
     Returns:
         int: O número de avaliações do usuário.
@@ -332,7 +330,7 @@ def printProgressBar(
     decimals=1,
     length=100,
     fill="█",
-    printEnd="\r",
+    end="\r",
 ):
     """
     Chame em um loop para criar uma barra de progresso no terminal
@@ -345,12 +343,12 @@ def printProgressBar(
         decimals (int): número positivo de decimais no percentual completo
         length (int): comprimento em caracteres da barra
         fill (str): caractere de preenchimento da barra
-        printEnd (str): caractere de fim (por exemplo, "\r", "\r\n")
+        end (str): caractere de fim (por exemplo, "\r", "\r\n")
     """
     percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
     filledLength = int(length * iteration // total)
     bar = fill * filledLength + "-" * (length - filledLength)
-    print(f"\r{prefix} |{bar}| {percent}% {suffix}", end=printEnd)
+    print(f"\r{prefix} |{bar}| {percent}% {suffix}", end=end)
     # Imprimir nova linha ao completar
     if iteration == total:
         print()
